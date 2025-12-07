@@ -5,7 +5,7 @@ Class-based views for FastAPI.
 ## Installation
 
 ```bash
-pip install fastcbv
+uv add fastcbv
 ```
 
 ## Quick Start
