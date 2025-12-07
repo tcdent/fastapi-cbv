@@ -7,8 +7,8 @@ import inspect
 import pytest
 from fastapi import Depends
 
-from fastapi_cbv import BaseView, status_code
-from fastapi_cbv.views import (
+from fastcbv import BaseView, status_code
+from fastcbv.views import (
     ViewConfig,
     ViewMetadata,
     _extract_class_params,

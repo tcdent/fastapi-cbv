@@ -6,7 +6,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from fastapi_cbv import APIRouter, BaseView, status_code
+from fastcbv import APIRouter, BaseView, status_code
 
 
 def get_db():

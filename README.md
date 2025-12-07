@@ -1,18 +1,18 @@
-# fastapi-cbv
+# fastcbv
 
 Class-based views for FastAPI.
 
 ## Installation
 
 ```bash
-pip install fastapi-cbv
+pip install fastcbv
 ```
 
 ## Quick Start
 
 ```python
 from fastapi import FastAPI
-from fastapi_cbv import APIRouter, BaseView
+from fastcbv import APIRouter, BaseView
 
 app = FastAPI()
 router = APIRouter()
@@ -48,7 +48,7 @@ router.add_view("/items", ItemView, tags=["items"])
 ### Simple View
 
 ```python
-from fastapi_cbv import APIRouter, BaseView
+from fastcbv import APIRouter, BaseView
 
 class HealthView(BaseView):
     async def get(self) -> dict:
@@ -121,7 +121,7 @@ router.add_view("/items/{item_id}", ItemView)
 Use the `@status_code` decorator to set response status codes:
 
 ```python
-from fastapi_cbv import BaseView, status_code
+from fastcbv import BaseView, status_code
 
 class ItemView(BaseView):
     @status_code(201)
@@ -141,7 +141,7 @@ Create a base view that handles authentication, then inherit from it:
 
 ```python
 from fastapi import HTTPException
-from fastapi_cbv import BaseView
+from fastcbv import BaseView
 
 class AuthenticatedView(BaseView):
     """Base view that requires authentication."""
@@ -309,14 +309,14 @@ Base class for all views. Provides:
 
 Extended FastAPI router with `add_view()` method.
 
-The `APIRouter` from `fastapi_cbv` is a drop-in replacement for FastAPI's `APIRouter`. All existing routes, decorators, and configurations work unchanged—just swap the import and start using `add_view()` alongside your existing routes:
+The `APIRouter` from `fastcbv` is a drop-in replacement for FastAPI's `APIRouter`. All existing routes, decorators, and configurations work unchanged—just swap the import and start using `add_view()` alongside your existing routes:
 
 ```python
 # Before
 from fastapi import APIRouter
 
 # After
-from fastapi_cbv import APIRouter
+from fastcbv import APIRouter
 
 router = APIRouter(prefix="/api")
 
@@ -368,7 +368,7 @@ Decorator to set the HTTP status code for a method.
 Most route parameters can be configured at the router level (`tags`, `dependencies`, `responses`, `deprecated`) or derived from the method signature (parameters, return type). However, `status_code` is unique—it's method-specific and can't be inferred or set globally. The `@status_code` decorator provides a clean way to set this per-method:
 
 ```python
-from fastapi_cbv import BaseView, status_code
+from fastcbv import BaseView, status_code
 
 class ItemView(BaseView):
     async def get(self, item_id: int) -> dict:
