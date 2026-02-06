@@ -37,7 +37,7 @@ router.add_view("/items", ItemView, tags=["items"])
 ## Features
 
 - Define HTTP methods as class methods (`get`, `post`, `put`, `patch`, `delete`, `head`, `options`)
-- Class-level dependencies with FastAPI's `Depends` (default assignment and `Annotated` styles)
+- Class-level dependencies with FastAPI's `Depends` and `Annotated`
 - `__prepare__` hook for shared setup logic across methods
 - Full support for path parameters, query parameters, and request bodies
 - Full support for `from __future__ import annotations`
@@ -73,16 +73,17 @@ router.add_view("/items/{item_id}", ItemView)
 
 ### Class-Level Dependencies
 
-Use FastAPI's `Depends` as class attributes to share dependencies across all methods:
+Use `Annotated` with `Depends` as class attributes to share dependencies across all methods:
 
 ```python
+from typing import Annotated
 from fastapi import Depends
 
 def get_db():
     return Database()
 
 class ItemView(BaseView):
-    db: Database = Depends(get_db)
+    db: Annotated[Database, Depends(get_db)]
 
     async def get(self, item_id: int) -> dict:
         return await self.db.get_item(item_id)
@@ -91,26 +92,13 @@ class ItemView(BaseView):
         await self.db.delete_item(item_id)
 ```
 
-The `Annotated` style works too:
-
-```python
-from typing import Annotated
-from fastapi import Depends
-
-class ItemView(BaseView):
-    db: Annotated[Database, Depends(get_db)]
-
-    async def get(self, item_id: int) -> dict:
-        return await self.db.get_item(item_id)
-```
-
 ### The `__prepare__` Hook
 
 The `__prepare__` method runs before every HTTP method. Use it for common setup like loading resources:
 
 ```python
 class ItemView(BaseView):
-    db: Database = Depends(get_db)
+    db: Annotated[Database, Depends(get_db)]
 
     async def __prepare__(self, item_id: int) -> None:
         self.item = await self.db.get_item(item_id)
@@ -130,18 +118,13 @@ class ItemView(BaseView):
 router.add_view("/items/{item_id}", ItemView)
 ```
 
-### Method Parameters with `Annotated`
+### Query Parameters
 
-FastAPI's `Annotated` syntax works for method parameters, giving you full control over validation and metadata:
+Use `Annotated` with `Query` for validated query parameters:
 
 ```python
 from typing import Annotated
-from fastapi import Depends, Query
-from pydantic import BaseModel
-
-class FilterParams(BaseModel):
-    limit: int = 10
-    offset: int = 0
+from fastapi import Query
 
 class ItemView(BaseView):
     async def get(
@@ -149,9 +132,6 @@ class ItemView(BaseView):
         limit: Annotated[int, Query(ge=1, le=100)] = 10,
     ) -> list[dict]:
         return await get_items(limit=limit)
-
-    async def post(self, params: Annotated[FilterParams, Depends()]) -> dict:
-        return {"limit": params.limit, "offset": params.offset}
 ```
 
 ### Custom Status Codes
@@ -222,7 +202,7 @@ class ItemView(AuthenticatedView):
 ```python
 class DatabaseView(BaseView):
     """Base view with database access."""
-    db: Database = Depends(get_db)
+    db: Annotated[Database, Depends(get_db)]
 
 class ItemView(DatabaseView):
     async def get(self) -> list:
@@ -239,7 +219,7 @@ Organize complex logic using helper methods. Methods starting with `_` are ignor
 
 ```python
 class OrderView(BaseView):
-    db: Database = Depends(get_db)
+    db: Annotated[Database, Depends(get_db)]
 
     async def __prepare__(self, order_id: int) -> None:
         self.order = await self.db.get_order(order_id)
