@@ -56,9 +56,6 @@ def get_item_db() -> dict:
     return {"items": [ItemSchema(id=1, name="Test")]}
 
 
-security = HTTPBearer()
-
-
 # ── Unit tests ──────────────────────────────────────────────────────
 
 
