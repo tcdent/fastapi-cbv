@@ -37,9 +37,10 @@ router.add_view("/items", ItemView, tags=["items"])
 ## Features
 
 - Define HTTP methods as class methods (`get`, `post`, `put`, `patch`, `delete`, `head`, `options`)
-- Class-level dependencies with FastAPI's `Depends`
+- Class-level dependencies with FastAPI's `Depends` (default assignment and `Annotated` styles)
 - `__prepare__` hook for shared setup logic across methods
 - Full support for path parameters, query parameters, and request bodies
+- Full support for `from __future__ import annotations`
 - View inheritance for reusable patterns
 - Access to the request object via `self.request`
 
@@ -90,6 +91,19 @@ class ItemView(BaseView):
         await self.db.delete_item(item_id)
 ```
 
+The `Annotated` style works too:
+
+```python
+from typing import Annotated
+from fastapi import Depends
+
+class ItemView(BaseView):
+    db: Annotated[Database, Depends(get_db)]
+
+    async def get(self, item_id: int) -> dict:
+        return await self.db.get_item(item_id)
+```
+
 ### The `__prepare__` Hook
 
 The `__prepare__` method runs before every HTTP method. Use it for common setup like loading resources:
@@ -114,6 +128,30 @@ class ItemView(BaseView):
         await self.db.delete(self.item["id"])
 
 router.add_view("/items/{item_id}", ItemView)
+```
+
+### Method Parameters with `Annotated`
+
+FastAPI's `Annotated` syntax works for method parameters, giving you full control over validation and metadata:
+
+```python
+from typing import Annotated
+from fastapi import Depends, Query
+from pydantic import BaseModel
+
+class FilterParams(BaseModel):
+    limit: int = 10
+    offset: int = 0
+
+class ItemView(BaseView):
+    async def get(
+        self,
+        limit: Annotated[int, Query(ge=1, le=100)] = 10,
+    ) -> list[dict]:
+        return await get_items(limit=limit)
+
+    async def post(self, params: Annotated[FilterParams, Depends()]) -> dict:
+        return {"limit": params.limit, "offset": params.offset}
 ```
 
 ### Custom Status Codes

@@ -10,8 +10,9 @@ before handing them to FastAPI — otherwise non-builtin types
 from __future__ import annotations
 
 import inspect
+from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Query
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
@@ -41,6 +42,14 @@ class ItemSchema(BaseModel):
 class FilterParams(BaseModel):
     limit: int = 10
     offset: int = 0
+
+
+def get_item_model() -> ItemModel:
+    return ItemModel(name="test")
+
+
+def get_item_db() -> dict:
+    return {"items": [ItemSchema(id=1, name="Test")]}
 
 
 # ── Unit tests ──────────────────────────────────────────────────────
@@ -152,6 +161,31 @@ class TestAnnotationResolution:
         assert sig.parameters["prep"].annotation is ItemModel
         assert sig.parameters["body"].annotation is ItemModel
         assert sig.return_annotation is ItemModel
+
+    def test_annotated_class_dependency_resolved(self):
+        class MyView(BaseView):
+            item: Annotated[ItemModel, Depends(get_item_model)]
+
+            async def get(self) -> dict:
+                return {}
+
+        config = MyView._meta.configs[0]
+        sig = inspect.signature(config.endpoint)
+        annotation = sig.parameters["item"].annotation
+        # Should be Annotated[ItemModel, Depends(...)], not a string
+        assert not isinstance(annotation, str)
+        assert hasattr(annotation, "__metadata__")  # Annotated marker
+
+    def test_annotated_method_param_resolved(self):
+        class MyView(BaseView):
+            async def get(self, limit: Annotated[int, Query(ge=1)]) -> dict:
+                return {}
+
+        config = MyView._meta.configs[0]
+        sig = inspect.signature(config.endpoint)
+        annotation = sig.parameters["limit"].annotation
+        assert not isinstance(annotation, str)
+        assert hasattr(annotation, "__metadata__")
 
 
 # ── Integration tests ───────────────────────────────────────────────
@@ -285,3 +319,63 @@ class TestFutureAnnotationsIntegration:
         response = client.get("/items/1")
         assert response.status_code == 200
         assert response.json() == {"id": 1, "name": "Test"}
+
+    def test_annotated_class_dependency(self):
+        """Class-level dependency using Annotated syntax works."""
+
+        class ItemView(BaseView):
+            db: Annotated[dict, Depends(get_item_db)]
+
+            async def get(self) -> list[ItemSchema]:
+                return self.db["items"]
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.get("/items")
+        assert response.status_code == 200
+        assert response.json() == [{"id": 1, "name": "Test"}]
+
+    def test_annotated_method_query_param(self):
+        """Method parameter using Annotated with Query works."""
+
+        class ItemView(BaseView):
+            async def get(
+                self,
+                limit: Annotated[int, Query(ge=1, le=100)] = 10,
+            ) -> list[ItemSchema]:
+                return [ItemSchema(id=i, name=f"Item {i}") for i in range(limit)]
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.get("/items?limit=2")
+        assert response.status_code == 200
+        assert len(response.json()) == 2
+
+        # Query validation still works
+        response = client.get("/items?limit=0")
+        assert response.status_code == 422
+
+    def test_annotated_method_depends(self):
+        """Method parameter using Annotated with Depends works."""
+
+        class ItemView(BaseView):
+            async def get(self, params: Annotated[FilterParams, Depends()]) -> dict:
+                return {"limit": params.limit, "offset": params.offset}
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.get("/items?limit=5&offset=2")
+        assert response.status_code == 200
+        assert response.json() == {"limit": 5, "offset": 2}
