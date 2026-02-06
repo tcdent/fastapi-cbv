@@ -43,6 +43,7 @@ router.add_view("/items", ItemView, tags=["items"])
 - Full support for `from __future__ import annotations`
 - View inheritance for reusable patterns
 - Access to the request object via `self.request`
+- Built-in `self.background_tasks` for deferred work
 
 ## Basic Usage
 
@@ -285,6 +286,22 @@ class ItemView(BaseView):
         # ... delete logic
 ```
 
+### Background Tasks
+
+`self.background_tasks` is available on every view for scheduling work after the response is sent:
+
+```python
+class OrderView(BaseView):
+    db: Annotated[Database, Depends(get_db)]
+
+    @status_code(201)
+    async def post(self, name: str) -> dict:
+        order = await self.db.create_order(name)
+        self.background_tasks.add_task(send_confirmation_email, order.email)
+        self.background_tasks.add_task(update_inventory, order.items)
+        return order
+```
+
 ## Router Options
 
 ### Tags and Prefix
@@ -321,6 +338,7 @@ router.add_view(
 Base class for all views. Provides:
 
 - `self.request` - The FastAPI/Starlette `Request` object
+- `self.background_tasks` - FastAPI `BackgroundTasks` queue
 - `__prepare__(*args, **kwargs)` - Override to add setup logic
 
 ### `APIRouter`

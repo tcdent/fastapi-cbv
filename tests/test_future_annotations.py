@@ -12,7 +12,8 @@ from __future__ import annotations
 import inspect
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI, Path, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
@@ -44,12 +45,18 @@ class FilterParams(BaseModel):
     offset: int = 0
 
 
+security = HTTPBearer()
+
+
 def get_item_model() -> ItemModel:
     return ItemModel(name="test")
 
 
 def get_item_db() -> dict:
     return {"items": [ItemSchema(id=1, name="Test")]}
+
+
+security = HTTPBearer()
 
 
 # ── Unit tests ──────────────────────────────────────────────────────
@@ -379,3 +386,87 @@ class TestFutureAnnotationsIntegration:
         response = client.get("/items?limit=5&offset=2")
         assert response.status_code == 200
         assert response.json() == {"limit": 5, "offset": 2}
+
+    def test_annotated_prepare_path_param(self):
+        """Annotated[int, Path()] in __prepare__ works."""
+
+        class ItemView(BaseView):
+            async def __prepare__(self, item_id: Annotated[int, Path(ge=1)]):
+                self.item = ItemSchema(id=item_id, name=f"Item {item_id}")
+
+            async def get(self) -> ItemSchema:
+                return self.item
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items/{item_id}", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.get("/items/5")
+        assert response.status_code == 200
+        assert response.json() == {"id": 5, "name": "Item 5"}
+
+        # Path validation rejects invalid values
+        response = client.get("/items/0")
+        assert response.status_code == 422
+
+    def test_security_scheme_class_dependency(self):
+        """HTTPBearer security scheme as Annotated class-level dep works."""
+
+        class ProtectedView(BaseView):
+            credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]
+
+            async def get(self) -> dict:
+                return {"token": self.credentials.credentials}
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/protected", ProtectedView)
+        app.include_router(router)
+
+        client = TestClient(app)
+
+        # Missing auth is rejected
+        response = client.get("/protected")
+        assert response.status_code in (401, 403)
+
+        # Valid bearer token works
+        response = client.get(
+            "/protected",
+            headers={"Authorization": "Bearer my-secret-token"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"token": "my-secret-token"}
+
+    def test_security_scheme_with_prepare(self):
+        """Security dep + __prepare__ with path param work together."""
+
+        class ProtectedItemView(BaseView):
+            credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]
+
+            async def __prepare__(self, item_id: int):
+                self.item_id = item_id
+
+            async def get(self) -> dict:
+                return {
+                    "item_id": self.item_id,
+                    "token": self.credentials.credentials,
+                }
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items/{item_id}", ProtectedItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+
+        response = client.get("/items/42")
+        assert response.status_code in (401, 403)
+
+        response = client.get(
+            "/items/42",
+            headers={"Authorization": "Bearer tok123"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"item_id": 42, "token": "tok123"}

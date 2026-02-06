@@ -578,3 +578,90 @@ class TestViewInheritance:
             "item_id": 5,
             "data": {"deleted": True},
         }
+
+
+class TestBackgroundTasks:
+    """Tests for self.background_tasks support."""
+
+    def test_background_tasks_available(self):
+        class ItemView(BaseView):
+            async def get(self) -> dict:
+                return {"has_tasks": self.background_tasks is not None}
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.get("/items")
+        assert response.status_code == 200
+        assert response.json() == {"has_tasks": True}
+
+    def test_background_tasks_execute(self):
+        results = []
+
+        def log_action(message: str):
+            results.append(message)
+
+        class ItemView(BaseView):
+            async def post(self) -> dict:
+                self.background_tasks.add_task(log_action, "item_created")
+                return {"status": "created"}
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.post("/items")
+        assert response.status_code == 200
+        assert response.json() == {"status": "created"}
+        assert results == ["item_created"]
+
+    def test_background_tasks_multiple(self):
+        results = []
+
+        def log_action(message: str):
+            results.append(message)
+
+        class ItemView(BaseView):
+            async def delete(self, item_id: int) -> dict:
+                self.background_tasks.add_task(log_action, f"deleted:{item_id}")
+                self.background_tasks.add_task(log_action, f"notified:{item_id}")
+                return {"deleted": item_id}
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items/{item_id}", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.delete("/items/42")
+        assert response.status_code == 200
+        assert results == ["deleted:42", "notified:42"]
+
+    def test_background_tasks_with_prepare(self):
+        results = []
+
+        def log_action(message: str):
+            results.append(message)
+
+        class ItemView(BaseView):
+            async def __prepare__(self, item_id: int):
+                self.item_id = item_id
+
+            async def delete(self) -> dict:
+                self.background_tasks.add_task(log_action, f"deleted:{self.item_id}")
+                return {"deleted": self.item_id}
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items/{item_id}", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.delete("/items/7")
+        assert response.status_code == 200
+        assert results == ["deleted:7"]
