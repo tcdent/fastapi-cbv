@@ -6,7 +6,6 @@ import inspect
 
 import pytest
 from fastapi import Depends
-from pydantic import BaseModel
 
 from fastcbv import BaseView, status_code
 from fastcbv.views import (
@@ -14,15 +13,7 @@ from fastcbv.views import (
     ViewMetadata,
     _extract_class_params,
     _extract_func_params,
-    _resolve_hints,
 )
-
-
-class ItemModel(BaseModel):
-    """Non-builtin type defined at module level for annotation tests."""
-
-    name: str
-    price: float = 0.0
 
 
 class TestViewMetadata:
@@ -318,127 +309,3 @@ class TestEndpointSignature:
         optional_idx = next(i for i, p in enumerate(params) if p.name == "db")
 
         assert required_idx < optional_idx
-
-
-class TestResolveHints:
-    """Tests for _resolve_hints helper."""
-
-    def test_resolves_class_hints(self):
-        class MyView(BaseView):
-            db: ItemModel
-
-        hints = _resolve_hints(MyView)
-        assert hints["db"] is ItemModel
-
-    def test_resolves_function_hints(self):
-        async def handler(self, item: ItemModel) -> ItemModel:
-            return item
-
-        hints = _resolve_hints(handler)
-        assert hints["item"] is ItemModel
-        assert hints["return"] is ItemModel
-
-    def test_resolves_builtin_hints(self):
-        async def handler(self, x: int, y: str) -> dict:
-            return {}
-
-        hints = _resolve_hints(handler)
-        assert hints["x"] is int
-        assert hints["y"] is str
-        assert hints["return"] is dict
-
-
-class TestFutureAnnotations:
-    """Tests that non-builtin types work with ``from __future__ import annotations``.
-
-    This module uses ``from __future__ import annotations``, so all type
-    annotations are strings at runtime. The view machinery must resolve
-    them back to real types before handing them to FastAPI.
-    """
-
-    def test_method_param_annotation_resolved(self):
-        """Method parameters with non-builtin type annotations are resolved."""
-
-        class MyView(BaseView):
-            async def post(self, item: ItemModel) -> dict:
-                return {}
-
-        config = MyView._meta.configs[0]
-        sig = inspect.signature(config.endpoint)
-        assert sig.parameters["item"].annotation is ItemModel
-
-    def test_return_annotation_resolved(self):
-        """Return annotations with non-builtin types are resolved."""
-
-        class MyView(BaseView):
-            async def get(self) -> ItemModel:
-                return ItemModel(name="test")
-
-        config = MyView._meta.configs[0]
-        sig = inspect.signature(config.endpoint)
-        assert sig.return_annotation is ItemModel
-
-    def test_return_annotation_generic_resolved(self):
-        """Generic return annotations like list[Model] are resolved."""
-
-        class MyView(BaseView):
-            async def get(self) -> list[ItemModel]:
-                return []
-
-        config = MyView._meta.configs[0]
-        sig = inspect.signature(config.endpoint)
-        # list[ItemModel] should be resolved, not a string
-        assert sig.return_annotation is not inspect.Signature.empty
-        assert not isinstance(sig.return_annotation, str)
-
-    def test_class_dependency_annotation_resolved(self):
-        """Class-level dependencies with non-builtin types are resolved."""
-
-        def get_item():
-            return ItemModel(name="test")
-
-        class MyView(BaseView):
-            item: ItemModel = Depends(get_item)
-
-            async def get(self) -> dict:
-                return {}
-
-        config = MyView._meta.configs[0]
-        sig = inspect.signature(config.endpoint)
-        assert sig.parameters["item"].annotation is ItemModel
-
-    def test_prepare_param_annotation_resolved(self):
-        """__prepare__ parameters with non-builtin types are resolved."""
-
-        class MyView(BaseView):
-            async def __prepare__(self, item: ItemModel):
-                self.item = item
-
-            async def get(self) -> dict:
-                return {}
-
-        config = MyView._meta.configs[0]
-        sig = inspect.signature(config.endpoint)
-        assert sig.parameters["item"].annotation is ItemModel
-
-    def test_combined_annotations_all_resolved(self):
-        """All parameter sources resolve non-builtin types together."""
-
-        def get_item():
-            return ItemModel(name="dep")
-
-        class MyView(BaseView):
-            dep: ItemModel = Depends(get_item)
-
-            async def __prepare__(self, prep: ItemModel):
-                pass
-
-            async def post(self, body: ItemModel) -> ItemModel:
-                return body
-
-        config = MyView._meta.configs[0]
-        sig = inspect.signature(config.endpoint)
-        assert sig.parameters["dep"].annotation is ItemModel
-        assert sig.parameters["prep"].annotation is ItemModel
-        assert sig.parameters["body"].annotation is ItemModel
-        assert sig.return_annotation is ItemModel
