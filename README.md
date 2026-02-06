@@ -37,9 +37,10 @@ router.add_view("/items", ItemView, tags=["items"])
 ## Features
 
 - Define HTTP methods as class methods (`get`, `post`, `put`, `patch`, `delete`, `head`, `options`)
-- Class-level dependencies with FastAPI's `Depends`
+- Class-level dependencies with FastAPI's `Depends` and `Annotated`
 - `__prepare__` hook for shared setup logic across methods
 - Full support for path parameters, query parameters, and request bodies
+- Full support for `from __future__ import annotations`
 - View inheritance for reusable patterns
 - Access to the request object via `self.request`
 
@@ -72,16 +73,17 @@ router.add_view("/items/{item_id}", ItemView)
 
 ### Class-Level Dependencies
 
-Use FastAPI's `Depends` as class attributes to share dependencies across all methods:
+Use `Annotated` with `Depends` as class attributes to share dependencies across all methods:
 
 ```python
+from typing import Annotated
 from fastapi import Depends
 
 def get_db():
     return Database()
 
 class ItemView(BaseView):
-    db: Database = Depends(get_db)
+    db: Annotated[Database, Depends(get_db)]
 
     async def get(self, item_id: int) -> dict:
         return await self.db.get_item(item_id)
@@ -96,7 +98,7 @@ The `__prepare__` method runs before every HTTP method. Use it for common setup 
 
 ```python
 class ItemView(BaseView):
-    db: Database = Depends(get_db)
+    db: Annotated[Database, Depends(get_db)]
 
     async def __prepare__(self, item_id: int) -> None:
         self.item = await self.db.get_item(item_id)
@@ -114,6 +116,22 @@ class ItemView(BaseView):
         await self.db.delete(self.item["id"])
 
 router.add_view("/items/{item_id}", ItemView)
+```
+
+### Query Parameters
+
+Use `Annotated` with `Query` for validated query parameters:
+
+```python
+from typing import Annotated
+from fastapi import Query
+
+class ItemView(BaseView):
+    async def get(
+        self,
+        limit: Annotated[int, Query(ge=1, le=100)] = 10,
+    ) -> list[dict]:
+        return await get_items(limit=limit)
 ```
 
 ### Custom Status Codes
@@ -184,7 +202,7 @@ class ItemView(AuthenticatedView):
 ```python
 class DatabaseView(BaseView):
     """Base view with database access."""
-    db: Database = Depends(get_db)
+    db: Annotated[Database, Depends(get_db)]
 
 class ItemView(DatabaseView):
     async def get(self) -> list:
@@ -201,7 +219,7 @@ Organize complex logic using helper methods. Methods starting with `_` are ignor
 
 ```python
 class OrderView(BaseView):
-    db: Database = Depends(get_db)
+    db: Annotated[Database, Depends(get_db)]
 
     async def __prepare__(self, order_id: int) -> None:
         self.order = await self.db.get_order(order_id)
@@ -265,6 +283,25 @@ class ItemView(BaseView):
         if not self.is_admin:
             raise HTTPException(status_code=403, detail="Admin required")
         # ... delete logic
+```
+
+### Background Tasks
+
+Add FastAPI's `BackgroundTasks` as a class-level dependency to schedule work after the response is sent:
+
+```python
+from fastapi import BackgroundTasks
+
+class OrderView(BaseView):
+    background_tasks: BackgroundTasks
+    db: Annotated[Database, Depends(get_db)]
+
+    @status_code(201)
+    async def post(self, name: str) -> dict:
+        order = await self.db.create_order(name)
+        self.background_tasks.add_task(send_confirmation_email, order.email)
+        self.background_tasks.add_task(update_inventory, order.items)
+        return order
 ```
 
 ## Router Options

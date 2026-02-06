@@ -40,6 +40,25 @@ class ViewMetadata:
     configs: list[ViewConfig] = field(default_factory=list)
 
 
+def _resolve_hints(obj: type | Callable, include_extras: bool = True) -> dict[str, Any]:
+    """Resolve type hints, falling back to raw annotations on failure.
+
+    Uses ``typing.get_type_hints`` to evaluate stringified annotations
+    (e.g. from ``from __future__ import annotations``). Falls back to
+    raw ``__annotations__`` when hints cannot be resolved at runtime
+    (e.g. types guarded by ``TYPE_CHECKING``).
+    """
+    try:
+        return get_type_hints(obj, include_extras=include_extras)
+    except Exception:
+        if isinstance(obj, type):
+            hints: dict[str, Any] = {}
+            for klass in reversed(obj.__mro__):
+                hints.update(getattr(klass, "__annotations__", {}))
+            return hints
+        return getattr(obj, "__annotations__", {})
+
+
 def _extract_class_params(
     cls: type,
     exclude: set[str] = {"^return$", "^_"},
@@ -52,7 +71,7 @@ def _extract_class_params(
             default=getattr(cls, name, inspect.Parameter.empty),
             annotation=annotation,
         )
-        for name, annotation in get_type_hints(cls).items()
+        for name, annotation in _resolve_hints(cls).items()
         if not any(re.match(e, name) for e in exclude)
     ]
 
@@ -61,9 +80,18 @@ def _extract_func_params(
     func: Callable,
     exclude: set[str] = {"^self$", "^args$", "^kwargs$", "^_"},
 ) -> list[inspect.Parameter]:
-    """Get parameters from a function, excluding matches."""
+    """Get parameters from a function, excluding matches.
+
+    Resolves stringified annotations from ``from __future__ import annotations``
+    using the function's own module namespace so that user-defined types are
+    available when FastAPI later inspects the generated endpoint.
+    """
+    hints = _resolve_hints(func)
     return [
-        p.replace(kind=inspect.Parameter.KEYWORD_ONLY)
+        p.replace(
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            annotation=hints.get(p.name, p.annotation),
+        )
         for p in inspect.signature(func).parameters.values()
         if not any(re.match(e, p.name) for e in exclude)
     ]
@@ -127,9 +155,12 @@ class ViewMeta(type):
 
             params = [*class_params, *prepare_params, *method_params]
             params.sort(key=lambda p: p.default is not inspect.Parameter.empty)
+            return_annotation = _resolve_hints(method_func).get(
+                "return", inspect.Signature.empty,
+            )
             endpoint.__signature__ = inspect.Signature(  # type: ignore[unresolved-attribute]
                 parameters=params,
-                return_annotation=inspect.signature(method_func).return_annotation,
+                return_annotation=return_annotation,
             )
             endpoint.__name__ = method_func.__name__
             endpoint.__doc__ = method_func.__doc__
@@ -171,7 +202,11 @@ class BaseView(metaclass=ViewMeta):
     _meta: ViewMetadata
     request: Request
 
-    def __init__(self, request: Request, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        request: Request,
+        **kwargs: Any,
+    ) -> None:
         """
         Initialize the view with request and class-level parameters.
 
