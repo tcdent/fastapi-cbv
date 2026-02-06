@@ -43,7 +43,7 @@ router.add_view("/items", ItemView, tags=["items"])
 - Full support for `from __future__ import annotations`
 - View inheritance for reusable patterns
 - Access to the request object via `self.request`
-- Built-in `self.background_tasks` for deferred work
+- Support for `BackgroundTasks` via class-level dependencies
 
 ## Basic Usage
 
