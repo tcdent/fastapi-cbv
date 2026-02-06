@@ -5,8 +5,23 @@ from __future__ import annotations
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 from fastcbv import APIRouter, BaseView, status_code
+
+
+class ItemSchema(BaseModel):
+    """Non-builtin Pydantic model for annotation resolution tests."""
+
+    id: int
+    name: str
+
+
+class FilterParams(BaseModel):
+    """Non-builtin Pydantic model for Depends() annotation tests."""
+
+    limit: int = 10
+    offset: int = 0
 
 
 def get_db():
@@ -578,3 +593,150 @@ class TestViewInheritance:
             "item_id": 5,
             "data": {"deleted": True},
         }
+
+
+class TestFutureAnnotations:
+    """Integration tests for ``from __future__ import annotations`` support.
+
+    This module already uses future annotations, so all type hints here
+    are strings at runtime. These tests verify that non-builtin types
+    in annotations are properly resolved before reaching FastAPI.
+    """
+
+    def test_pydantic_return_type(self):
+        """Non-builtin Pydantic model as return type works."""
+
+        class ItemView(BaseView):
+            async def get(self) -> ItemSchema:
+                return ItemSchema(id=1, name="Test")
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.get("/items")
+        assert response.status_code == 200
+        assert response.json() == {"id": 1, "name": "Test"}
+
+    def test_pydantic_list_return_type(self):
+        """Generic list[Model] return type works."""
+
+        class ItemView(BaseView):
+            async def get(self) -> list[ItemSchema]:
+                return [ItemSchema(id=1, name="A"), ItemSchema(id=2, name="B")]
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.get("/items")
+        assert response.status_code == 200
+        assert len(response.json()) == 2
+
+    def test_pydantic_body_param(self):
+        """Pydantic model as method body parameter works."""
+
+        class ItemView(BaseView):
+            async def post(self, item: ItemSchema) -> ItemSchema:
+                return item
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.post("/items", json={"id": 1, "name": "Created"})
+        assert response.status_code == 200
+        assert response.json() == {"id": 1, "name": "Created"}
+
+    def test_pydantic_dependency_param(self):
+        """Pydantic model via Depends() in method params works."""
+
+        class ItemView(BaseView):
+            async def get(self, params: FilterParams = Depends()) -> dict:
+                return {"limit": params.limit, "offset": params.offset}
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.get("/items?limit=5&offset=2")
+        assert response.status_code == 200
+        assert response.json() == {"limit": 5, "offset": 2}
+
+    def test_class_dependency_with_custom_type(self):
+        """Class-level dependency with non-builtin annotation works."""
+
+        class Database(BaseModel):
+            connection: str = "active"
+
+        def get_database() -> Database:
+            return Database()
+
+        class ItemView(BaseView):
+            db: Database = Depends(get_database)
+
+            async def get(self) -> dict:
+                return {"status": self.db.connection}
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.get("/items")
+        assert response.status_code == 200
+        assert response.json() == {"status": "active"}
+
+    def test_prepare_with_custom_type(self):
+        """__prepare__ with non-builtin annotated params works."""
+
+        class ItemView(BaseView):
+            async def __prepare__(self, item_id: int):
+                self.item = ItemSchema(id=item_id, name=f"Item {item_id}")
+
+            async def get(self) -> ItemSchema:
+                return self.item
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items/{item_id}", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.get("/items/42")
+        assert response.status_code == 200
+        assert response.json() == {"id": 42, "name": "Item 42"}
+
+    def test_combined_custom_types(self):
+        """All annotation sources with non-builtin types work together."""
+
+        def get_db():
+            return {"items": {1: ItemSchema(id=1, name="Test")}}
+
+        class ItemView(BaseView):
+            db: dict = Depends(get_db)
+
+            async def __prepare__(self, item_id: int):
+                self.item = self.db["items"].get(item_id)
+
+            async def get(self) -> ItemSchema | None:
+                return self.item
+
+        app = FastAPI()
+        router = APIRouter()
+        router.add_view("/items/{item_id}", ItemView)
+        app.include_router(router)
+
+        client = TestClient(app)
+        response = client.get("/items/1")
+        assert response.status_code == 200
+        assert response.json() == {"id": 1, "name": "Test"}
