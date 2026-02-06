@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import BackgroundTasks, Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from fastcbv import APIRouter, BaseView, status_code
@@ -581,10 +581,12 @@ class TestViewInheritance:
 
 
 class TestBackgroundTasks:
-    """Tests for self.background_tasks support."""
+    """Tests for background_tasks as a class-level dependency."""
 
     def test_background_tasks_available(self):
         class ItemView(BaseView):
+            background_tasks: BackgroundTasks
+
             async def get(self) -> dict:
                 return {"has_tasks": self.background_tasks is not None}
 
@@ -605,6 +607,8 @@ class TestBackgroundTasks:
             results.append(message)
 
         class ItemView(BaseView):
+            background_tasks: BackgroundTasks
+
             async def post(self) -> dict:
                 self.background_tasks.add_task(log_action, "item_created")
                 return {"status": "created"}
@@ -627,6 +631,8 @@ class TestBackgroundTasks:
             results.append(message)
 
         class ItemView(BaseView):
+            background_tasks: BackgroundTasks
+
             async def delete(self, item_id: int) -> dict:
                 self.background_tasks.add_task(log_action, f"deleted:{item_id}")
                 self.background_tasks.add_task(log_action, f"notified:{item_id}")
@@ -649,6 +655,8 @@ class TestBackgroundTasks:
             results.append(message)
 
         class ItemView(BaseView):
+            background_tasks: BackgroundTasks
+
             async def __prepare__(self, item_id: int):
                 self.item_id = item_id
 

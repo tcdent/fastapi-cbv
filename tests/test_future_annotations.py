@@ -45,6 +45,14 @@ class FilterParams(BaseModel):
     offset: int = 0
 
 
+class Database(BaseModel):
+    connection: str = "active"
+
+
+def get_database() -> Database:
+    return Database()
+
+
 security = HTTPBearer()
 
 
@@ -261,12 +269,6 @@ class TestFutureAnnotationsIntegration:
         assert response.json() == {"limit": 5, "offset": 2}
 
     def test_class_dependency_with_custom_type(self):
-        class Database(BaseModel):
-            connection: str = "active"
-
-        def get_database() -> Database:
-            return Database()
-
         class ItemView(BaseView):
             db: Database = Depends(get_database)
 

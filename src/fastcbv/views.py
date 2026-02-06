@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from fastapi import BackgroundTasks, Request
+from fastapi import Request
 
 from .decorators import _get_status_code
 
@@ -201,12 +201,10 @@ class BaseView(metaclass=ViewMeta):
 
     _meta: ViewMetadata
     request: Request
-    background_tasks: BackgroundTasks
 
     def __init__(
         self,
         request: Request,
-        background_tasks: BackgroundTasks,
         **kwargs: Any,
     ) -> None:
         """
@@ -214,11 +212,9 @@ class BaseView(metaclass=ViewMeta):
 
         Args:
             request: The FastAPI request object
-            background_tasks: FastAPI background tasks queue
             **kwargs: Resolved class-level parameters
         """
         self.request = request
-        self.background_tasks = background_tasks
         for key, value in kwargs.items():
             setattr(self, key, value)
 

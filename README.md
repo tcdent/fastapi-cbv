@@ -288,10 +288,13 @@ class ItemView(BaseView):
 
 ### Background Tasks
 
-`self.background_tasks` is available on every view for scheduling work after the response is sent:
+Add FastAPI's `BackgroundTasks` as a class-level dependency to schedule work after the response is sent:
 
 ```python
+from fastapi import BackgroundTasks
+
 class OrderView(BaseView):
+    background_tasks: BackgroundTasks
     db: Annotated[Database, Depends(get_db)]
 
     @status_code(201)
@@ -338,7 +341,6 @@ router.add_view(
 Base class for all views. Provides:
 
 - `self.request` - The FastAPI/Starlette `Request` object
-- `self.background_tasks` - FastAPI `BackgroundTasks` queue
 - `__prepare__(*args, **kwargs)` - Override to add setup logic
 
 ### `APIRouter`
